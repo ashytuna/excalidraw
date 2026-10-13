@@ -38,6 +38,14 @@ interface ImportMetaEnv {
 
   VITE_APP_GIT_SHA: string;
 
+  // public path the app is served from (vite `base`), e.g. "/excalidraw/"
+  VITE_APP_BASE_PATH: string;
+  VITE_APP_SITE_URL: string;
+  // hides collab, shareable links & Excalidraw+ export (need excalidraw.com backends)
+  VITE_APP_DISABLE_COLLAB: string;
+  // OAuth client id for Google Drive sync (empty = feature hidden)
+  VITE_APP_GOOGLE_CLIENT_ID: string;
+
   MODE: string;
 
   DEV: string;

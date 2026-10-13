@@ -79,6 +79,8 @@ import type {
 import type { ResolutionType } from "@excalidraw/common/utility-types";
 import type { ResolvablePromise } from "@excalidraw/common/utils";
 
+import type { LibraryPersistedData } from "@excalidraw/excalidraw/data/library";
+
 import CustomStats from "./CustomStats";
 import {
   Provider,
@@ -142,6 +144,11 @@ import DebugCanvas, {
 } from "./components/DebugCanvas";
 import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
+import { DriveSync } from "./gdrive/sync";
+import {
+  DriveConflictDialog,
+  DriveSyncStatusButton,
+} from "./gdrive/DriveSyncUI";
 import { ExcalidrawPlusIframeExport } from "./ExcalidrawPlusIframeExport";
 
 import "./index.scss";
@@ -282,7 +289,11 @@ const initializeScene = async (opts: {
       }
       scene.scrollToContent = true;
       if (!roomLinkData) {
-        window.history.replaceState({}, APP_NAME, window.location.origin);
+        window.history.replaceState(
+          {},
+          APP_NAME,
+          window.location.origin + import.meta.env.BASE_URL,
+        );
       }
     } else {
       // https://github.com/excalidraw/excalidraw/issues/1919
@@ -299,10 +310,18 @@ const initializeScene = async (opts: {
       }
 
       roomLinkData = null;
-      window.history.replaceState({}, APP_NAME, window.location.origin);
+      window.history.replaceState(
+        {},
+        APP_NAME,
+        window.location.origin + import.meta.env.BASE_URL,
+      );
     }
   } else if (externalUrlMatch) {
-    window.history.replaceState({}, APP_NAME, window.location.origin);
+    window.history.replaceState(
+      {},
+      APP_NAME,
+      window.location.origin + import.meta.env.BASE_URL,
+    );
 
     const url = externalUrlMatch[1];
     try {
@@ -372,11 +391,23 @@ const initializeScene = async (opts: {
   return { scene: null, isExternalScene: false };
 };
 
+/** IDB library persistence + notifies Drive sync of library changes */
+const DriveSyncedLibraryAdapter = {
+  load: () => LibraryIndexedDBAdapter.load(),
+  save: async (data: LibraryPersistedData) => {
+    await LibraryIndexedDBAdapter.save(data);
+    DriveSync.onLocalChange();
+  },
+};
+
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
 
   const [errorMessage, setErrorMessage] = useState("");
-  const isCollabDisabled = isRunningInIframe();
+  // collab & share links rely on excalidraw.com backends (disabled on forks)
+  const isOnlineSharingDisabled =
+    import.meta.env.VITE_APP_DISABLE_COLLAB === "true";
+  const isCollabDisabled = isRunningInIframe() || isOnlineSharingDisabled;
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
 
@@ -445,7 +476,7 @@ const ExcalidrawWrapper = () => {
 
   useHandleLibrary({
     excalidrawAPI,
-    adapter: LibraryIndexedDBAdapter,
+    adapter: DriveSyncedLibraryAdapter,
     // TODO maybe remove this in several months (shipped: 24-03-11)
     migrationAdapter: LibraryLocalStorageMigrationAdapter,
   });
@@ -565,6 +596,10 @@ const ExcalidrawWrapper = () => {
     initializeScene({ collabAPI, excalidrawAPI }).then(async (data) => {
       loadImages(data, /* isInitialLoad */ true);
       initialStatePromiseRef.current.promise.resolve(data.scene);
+      if (!isCollaborationLink(window.location.href)) {
+        // after the initial scene is applied to the editor
+        setTimeout(() => DriveSync.init(excalidrawAPI));
+      }
     });
 
     const onHashChange = async (event: HashChangeEvent) => {
@@ -660,12 +695,16 @@ const ExcalidrawWrapper = () => {
     const visibilityChange = (event: FocusEvent | Event) => {
       if (event.type === EVENT.BLUR || document.hidden) {
         LocalData.flushSave();
+        DriveSync.flush();
       }
       if (
         event.type === EVENT.VISIBILITY_CHANGE ||
         event.type === EVENT.FOCUS
       ) {
         syncData();
+        if (!document.hidden) {
+          DriveSync.onFocus();
+        }
       }
     };
 
@@ -724,6 +763,7 @@ const ExcalidrawWrapper = () => {
     // this check is redundant, but since this is a hot path, it's best
     // not to evaludate the nested expression every time
     if (!LocalData.isSavePaused()) {
+      DriveSync.onLocalChange();
       LocalData.save(elements, appState, files, () => {
         if (excalidrawAPI) {
           let didChange = false;
@@ -957,31 +997,34 @@ const ExcalidrawWrapper = () => {
           canvasActions: {
             toggleTheme: true,
             export: {
-              onExportToBackend,
-              renderCustomUI: excalidrawAPI
-                ? (elements, appState, files) => {
-                    return (
-                      <ExportToExcalidrawPlus
-                        elements={elements}
-                        appState={appState}
-                        files={files}
-                        name={excalidrawAPI.getName()}
-                        onError={(error) => {
-                          excalidrawAPI?.updateScene({
-                            appState: {
-                              errorMessage: error.message,
-                            },
-                          });
-                        }}
-                        onSuccess={() => {
-                          excalidrawAPI.updateScene({
-                            appState: { openDialog: null },
-                          });
-                        }}
-                      />
-                    );
-                  }
-                : undefined,
+              onExportToBackend: isOnlineSharingDisabled
+                ? undefined
+                : onExportToBackend,
+              renderCustomUI:
+                excalidrawAPI && !isOnlineSharingDisabled
+                  ? (elements, appState, files) => {
+                      return (
+                        <ExportToExcalidrawPlus
+                          elements={elements}
+                          appState={appState}
+                          files={files}
+                          name={excalidrawAPI.getName()}
+                          onError={(error) => {
+                            excalidrawAPI?.updateScene({
+                              appState: {
+                                errorMessage: error.message,
+                              },
+                            });
+                          }}
+                          onSuccess={() => {
+                            excalidrawAPI.updateScene({
+                              appState: { openDialog: null },
+                            });
+                          }}
+                        />
+                      );
+                    }
+                  : undefined,
             },
           },
         }}
@@ -993,6 +1036,13 @@ const ExcalidrawWrapper = () => {
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopRightUI={(isMobile) => {
+          if (isOnlineSharingDisabled) {
+            return (
+              <div className="excalidraw-ui-top-right">
+                <DriveSyncStatusButton />
+              </div>
+            );
+          }
           if (isMobile || !collabAPI || isCollabDisabled) {
             return null;
           }
@@ -1083,24 +1133,28 @@ const ExcalidrawWrapper = () => {
           <Collab excalidrawAPI={excalidrawAPI} />
         )}
 
-        <ShareDialog
-          collabAPI={collabAPI}
-          onExportToBackend={async () => {
-            if (excalidrawAPI) {
-              try {
-                await onExportToBackend(
-                  excalidrawAPI.getSceneElements(),
-                  excalidrawAPI.getAppState(),
-                  excalidrawAPI.getFiles(),
-                );
-              } catch (error: any) {
-                setErrorMessage(error.message);
+        {!isOnlineSharingDisabled && (
+          <ShareDialog
+            collabAPI={collabAPI}
+            onExportToBackend={async () => {
+              if (excalidrawAPI) {
+                try {
+                  await onExportToBackend(
+                    excalidrawAPI.getSceneElements(),
+                    excalidrawAPI.getAppState(),
+                    excalidrawAPI.getFiles(),
+                  );
+                } catch (error: any) {
+                  setErrorMessage(error.message);
+                }
               }
-            }
-          }}
-        />
+            }}
+          />
+        )}
 
         <AppSidebar />
+
+        <DriveConflictDialog />
 
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>

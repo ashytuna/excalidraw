@@ -1,0 +1,136 @@
+@import "../../packages/excalidraw/css/variables.module.scss";
+
+.excalidraw {
+  .DriveSyncStatus {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: var(--lg-button-size, 2.25rem);
+    padding: 0 0.625rem;
+    border: none;
+    border-radius: var(--border-radius-lg);
+    background-color: var(--island-bg-color);
+    box-shadow: var(--shadow-island);
+    color: var(--color-gray-60, var(--text-primary-color));
+    font-family: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+
+    svg {
+      width: 1.125rem;
+      height: 1.125rem;
+      flex: 0 0 auto;
+    }
+
+    &:hover {
+      background-color: var(--button-hover-bg);
+    }
+
+    &.is-syncing svg {
+      animation: DriveSyncStatus-pulse 1.2s ease-in-out infinite;
+    }
+
+    &.is-warning {
+      color: var(--color-warning-text, #b46b00);
+    }
+
+    &.is-danger {
+      color: var(--color-danger);
+    }
+  }
+
+  .DriveConflict {
+    &__desc {
+      margin-top: 0;
+    }
+
+    &__cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+
+      @media (max-width: 600px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    &__card {
+      border: 1px solid var(--default-border-color);
+      border-radius: var(--border-radius-lg);
+      padding: 0.75rem;
+      min-width: 0;
+
+      h4 {
+        margin: 0 0 0.5rem;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.25rem 0.75rem;
+        margin: 0.75rem 0 0;
+        font-size: 0.875rem;
+      }
+
+      dt {
+        color: var(--color-gray-50, inherit);
+      }
+
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+    }
+
+    &__preview {
+      height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--border-radius-md);
+      background: var(--color-surface-low, rgba(0, 0, 0, 0.04));
+      overflow: hidden;
+
+      svg {
+        max-width: 100%;
+        max-height: 100%;
+      }
+    }
+
+    &__actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    &__backup {
+      margin-top: 0.75rem;
+      text-align: right;
+
+      button {
+        border: none;
+        background: none;
+        padding: 0;
+        color: var(--color-primary);
+        font-family: inherit;
+        font-size: 0.875rem;
+        cursor: pointer;
+        text-decoration: underline;
+
+        &:disabled {
+          opacity: 0.5;
+          cursor: default;
+        }
+      }
+    }
+  }
+}
+
+@keyframes DriveSyncStatus-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}

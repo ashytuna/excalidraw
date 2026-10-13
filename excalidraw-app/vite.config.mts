@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
@@ -8,11 +9,28 @@ import checker from "vite-plugin-checker";
 import { createHtmlPlugin } from "vite-plugin-html";
 import Sitemap from "vite-plugin-sitemap";
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
+// fork: preload the latin + vietnamese Excalifont chunks (first two imports
+// in the generated index.ts, see scripts/dfvn-font/build.py)
+const excalifontPreloads = [
+  ...fs
+    .readFileSync(
+      path.resolve(
+        __dirname,
+        "../packages/excalidraw/fonts/Excalifont/index.ts",
+      ),
+      "utf8",
+    )
+    .matchAll(/import _[01] from "\.\/(.+\.woff2)";/g),
+].map(([, file]) => `fonts/Excalifont/${file}`);
+
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
+  // public path the app is served from, e.g. "/excalidraw/" on GitHub Pages
+  const base = envVars.VITE_APP_BASE_PATH || "/";
   // https://vitejs.dev/config/
   return {
+    base,
     server: {
       port: Number(envVars.VITE_APP_PORT || 3000),
       // open the browser
@@ -133,13 +151,13 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       Sitemap({
-        hostname: "https://excalidraw.com",
+        hostname: envVars.VITE_APP_SITE_URL || "https://excalidraw.com",
         outDir: "build",
         changefreq: "monthly",
         // its static in public folder
         generateRobotsTxt: false,
       }),
-      woff2BrowserPlugin(),
+      woff2BrowserPlugin({ preloadFonts: excalifontPreloads }),
       react(),
       checker({
         typescript: true,
@@ -162,6 +180,8 @@ export default defineConfig(({ mode }) => {
         },
 
         workbox: {
+          // static pages (e.g. privacy.html) must not be served the app shell
+          navigateFallbackDenylist: [/\.html$/],
           // don't precache fonts, locales and separate chunks
           globIgnores: [
             "fonts.css",
@@ -252,21 +272,22 @@ export default defineConfig(({ mode }) => {
               type: "image/png",
             },
           ],
-          start_url: "/",
+          start_url: base,
+          scope: base,
           id: "excalidraw",
           display: "standalone",
           theme_color: "#121212",
           background_color: "#ffffff",
           file_handlers: [
             {
-              action: "/",
+              action: base,
               accept: {
                 "application/vnd.excalidraw+json": [".excalidraw"],
               },
             },
           ],
           share_target: {
-            action: "/web-share-target",
+            action: `${base}web-share-target`,
             method: "POST",
             enctype: "multipart/form-data",
             params: {
@@ -284,32 +305,32 @@ export default defineConfig(({ mode }) => {
           },
           screenshots: [
             {
-              src: "/screenshots/virtual-whiteboard.png",
+              src: "screenshots/virtual-whiteboard.png",
               type: "image/png",
               sizes: "462x945",
             },
             {
-              src: "/screenshots/wireframe.png",
+              src: "screenshots/wireframe.png",
               type: "image/png",
               sizes: "462x945",
             },
             {
-              src: "/screenshots/illustration.png",
+              src: "screenshots/illustration.png",
               type: "image/png",
               sizes: "462x945",
             },
             {
-              src: "/screenshots/shapes.png",
+              src: "screenshots/shapes.png",
               type: "image/png",
               sizes: "462x945",
             },
             {
-              src: "/screenshots/collaboration.png",
+              src: "screenshots/collaboration.png",
               type: "image/png",
               sizes: "462x945",
             },
             {
-              src: "/screenshots/export.png",
+              src: "screenshots/export.png",
               type: "image/png",
               sizes: "462x945",
             },
